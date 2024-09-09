@@ -133,33 +133,6 @@ class Space:
         elif self.integration_method == "rk4":
             self.rk4_step()
 
-    def euler_step(self):
-        for mass in self.masses:
-            if not mass.fixed:
-                # Calculate forces
-                fx, fy = self.calculate_forces(mass)
-
-                # Cap forces - REB
-                fx = max(-self.max_force, min(self.max_force, fx))
-                fy = max(-self.max_force, min(self.max_force, fy))
-
-                # Update velocity
-                mass.vx += fx / mass.mass * self.dt
-                mass.vy += fy / mass.mass * self.dt
-
-                # Cap velocity - REB
-                speed = math.sqrt(mass.vx**2 + mass.vy**2)
-                if speed > self.max_velocity:
-                    mass.vx = mass.vx / speed * self.max_velocity
-                    mass.vy = mass.vy / speed * self.max_velocity
-
-                # Update position
-                mass.x += mass.vx * self.dt
-                mass.y += mass.vy * self.dt
-
-                # Apply boundary conditions
-                self.apply_boundaries(mass)
-
     def calculate_forces(self, mass):
         fx, fy = 0, 0
 
@@ -198,6 +171,33 @@ class Space:
             pass  # TODO
 
         return fx, fy
+
+    def euler_step(self):
+        for mass in self.masses:
+            if not mass.fixed:
+                # Calculate forces
+                fx, fy = self.calculate_forces(mass)
+
+                # Cap forces - REB
+                fx = max(-self.max_force, min(self.max_force, fx))
+                fy = max(-self.max_force, min(self.max_force, fy))
+
+                # Update velocity
+                mass.vx += fx / mass.mass * self.dt
+                mass.vy += fy / mass.mass * self.dt
+
+                # Cap velocity - REB
+                speed = math.sqrt(mass.vx**2 + mass.vy**2)
+                if speed > self.max_velocity:
+                    mass.vx = mass.vx / speed * self.max_velocity
+                    mass.vy = mass.vy / speed * self.max_velocity
+
+                # Update position
+                mass.x += mass.vx * self.dt
+                mass.y += mass.vy * self.dt
+
+                # Apply boundary conditions
+                self.apply_boundaries(mass)
 
     def calculate_derivative(self, mass, dx, dy):
         original_x, original_y = mass.x, mass.y
@@ -303,7 +303,7 @@ def load_xsp(filename: str) -> Space:
 
 def main(xsp_file: str, integration_method: str):
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
+    screen = pygame.display.set_mode((1024, 768))
     clock = pygame.time.Clock()
 
     space = load_xsp(xsp_file)
@@ -314,6 +314,10 @@ def main(xsp_file: str, integration_method: str):
 
     #for spring in space.springs:
     #    spring.ks *= 0.5  # REB - reduce explosions
+
+    # Set up the display
+    screen = pygame.display.set_mode((space.width, space.height))
+    clock = pygame.time.Clock()
 
     running = True
     while running:
@@ -327,12 +331,12 @@ def main(xsp_file: str, integration_method: str):
 
         for spring in space.springs:
             pygame.draw.line(screen, (255, 255, 255),
-                             (int(spring.mass1.x), int(spring.mass1.y)),
-                             (int(spring.mass2.x), int(spring.mass2.y)))
+                             (int(spring.mass1.x), int(space.height - spring.mass1.y)),
+                             (int(spring.mass2.x), int(space.height - spring.mass2.y)))
 
         for mass in space.masses:
             pygame.draw.circle(screen, (255, 0, 0),
-                               (int(mass.x), int(mass.y)), mass.radius)
+                               (int(mass.x), int(space.height - mass.y)), mass.radius)
 
         pygame.display.flip()
         clock.tick(60)
@@ -343,7 +347,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PySpringies simulation.")
     parser.add_argument("xsp_file", help="Path to the XSP file")
     parser.add_argument("--method", choices=["euler", "rk4"], default="euler",
-                        help="Integretion method (default: euler)")
+                        help="Integration method (default: euler)")
     args = parser.parse_args()
 
     main(args.xsp_file, args.method)
