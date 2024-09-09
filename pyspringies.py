@@ -161,24 +161,24 @@ class Space:
             dist = math.sqrt(dx*dx + dy*dy) # TODO - add something here to avoid divide by zero?
             if dist > 0:
                 force = self.center_mass.value / (dist ** self.center_mass.misc)
-                fx += force * dx / mass.mass
-                fy += force * dy / mass.mass
+                fx += force * dx * mass.mass
+                fy += force * dy * mass.mass
 
-        fx -= self.viscosity * mass.vx
-        fy -= self.viscosity * mass.vy
+        fx -= self.viscosity * mass.vx * mass.mass
+        fy -= self.viscosity * mass.vy * mass.mass
 
         for spring in self.springs:
             if spring.mass1 == mass or spring.mass2 == mass:
                 other = spring.mass2 if spring.mass1 == mass else spring.mass1
-                dx = other.x - mass.x # TODO use a function instead that takes other.x,y and returns ax and ay
-                dy = other.y - mass.y # TODO - this bit and the distance bit following is very similar to that which we did above for the self.center_y (and the sqrt below) can it be a function for this?
+                dx = other.x - mass.x
+                dy = other.y - mass.y
                 distance = math.sqrt(dx*dx + dy*dy) # TODO - add something here too?
                 if distance > 0:
                     force = spring.ks * (distance - spring.restlen)
                     damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
                     total_force = (force - damp) / distance
-                    fx += total_force * dx / mass.mass
-                    fy += total_force * dy / mass.mass
+                    fx += total_force * dx / distance
+                    fy += total_force * dy / distance
 
         if self.pointer_attraction.enabled:
             pass  # TODO
