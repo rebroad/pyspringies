@@ -66,21 +66,16 @@ class Space:
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = False
-        if mass < 0:
+        if mass < 0 or (self.fix_mass and mass > 0):
             mass = abs(mass)
             fixed = True
 
-        try:
-            radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
-        except ValueError:
-            print(f"Warning: Invalid mass value {mass} for mass ID {id}. Setting radius to 1.")
-            radius = 1
-
+        radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
         self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
-        mass1 = next(m for m in self.masses if m.id == m1)
-        mass2 = next(m for m in self.masses if m.id == m2)
+        mass1 = next((m for m in self.masses if m.id == m1), None)
+        mass2 = next((m for m in self.masses if m.id == m2), None)
         self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
         if mass1 and mass2:
             self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
@@ -176,7 +171,7 @@ def load_xsp(filename: str) -> Space:
         with open(filename, 'r') as file:
             for line in file:
                 parts = line.strip().split()
-                if not parts:
+                if not parts or parts[0].startswith('#'):
                     continue
                 if parts[0] == 'mass':
                     try:
@@ -211,8 +206,24 @@ def load_xsp(filename: str) -> Space:
                             space.wall.misc = misc
                     except ValueError as e:
                         print(f"Error parsing force: {e}")
+                elif parts[0] == 'cmas':
+                    space.default_mass = float(parts[1])
+                elif parts[0] == 'elas':
+                    space.default_elastic = float(parts[1])
+                elif parts[0] == 'kspr':
+                    space.default_ks = float(parts[1])
+                elif parts[0] == 'kdmp':
+                    space.default_kd = float(parts[1])
+                elif parts[0] == 'fixm':
+                    space.fix_mass = int(parts[1]) != 0
+                elif parts[0] == 'shws':
+                    space.show_springs = int(parts[1]) != 0
+                elif parts[0] == 'cent':
+                    space.center_id = int(parts[1])
                 elif parts[0] == 'visc':
                     space.viscosity = float(parts[1])
+                elif parts[0] == 'stck':
+                    space.stickiness = float(parts[1])
                 elif parts[0] == 'step':
                     space.dt = float(parts[1])
                 elif parts[0] == 'prec':
@@ -222,7 +233,8 @@ def load_xsp(filename: str) -> Space:
                 elif parts[0] == 'gsnp':
                     space.grid_snap = float(parts[1])
                     space.grid_snap_enabled = int(parts[2]) != 0
-                # TODO - more parsing options here to add?
+                elif parts[0] == 'wall':
+                    space.walls = [int(x) != 0 for x in parts[1:5]]
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
         sys.exit(1)
