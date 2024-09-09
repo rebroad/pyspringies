@@ -63,6 +63,7 @@ class Space:
         self.show_springs = True
         self.center_id = -1
         self.walls = [False, False, False, False]  # top, left, right, bottom
+        self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
         self.integration_method = "euler"  # Default to Euler
 
@@ -137,6 +138,9 @@ class Space:
             if not mass.fixed:
                 # Calculate forces
                 fx, fy = self.calculate_forces(mass)
+
+                fx = max(-self.max_force, min(self.max_force, fx))  # REB
+                fy = max(-self.max_force, min(self.max_force, fy))  # REB
 
                 # Update velocity
                 mass.vx += fx / mass.mass * self.dt
