@@ -164,8 +164,8 @@ class Space:
                 fx += force * dx / mass.mass
                 fy += force * dy / mass.mass
 
-        #ax -= self.viscosity * mass.vx
-        #ay -= self.viscosity * mass.vy
+        fx -= self.viscosity * mass.vx
+        fy -= self.viscosity * mass.vy
 
         for spring in self.springs:
             if spring.mass1 == mass or spring.mass2 == mass:
@@ -179,6 +179,12 @@ class Space:
                     total_force = (force - damp) / distance
                     fx += total_force * dx / mass.mass
                     fy += total_force * dy / mass.mass
+
+        if self.pointer_attraction.enabled:
+            pass  # TODO
+
+        if self.wall.enabled:
+            pass  # TODO
 
         return fx, fy
 
