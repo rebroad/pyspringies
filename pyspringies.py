@@ -49,6 +49,7 @@ class Space:
         self.viscosity = 0.0
         self.center_x = width / 2
         self.center_y = height / 2
+        self.max_velocity = 1000  # REB: Attempt to stop the explosions
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = False
@@ -62,11 +63,14 @@ class Space:
             print(f"Warning: Invalid mass value {mass} for mass ID {id}. Setting radius to 1.")
             radius = 1
 
-        self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius))
+        mass = max(0.1, min(100, mass))  # REB: Attempt to stop the explosions
+        self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
         mass1 = next(m for m in self.masses if m.id == m1)
         mass2 = next(m for m in self.masses if m.id == m2)
+        ks = min(ks, 1000)  # REB: Attempt to stop the explosions
+        kd = min(kd, 10)    # REB: Attempt to stop the explosions
         self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
         if mass1 and mass2:
             self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
@@ -104,7 +108,8 @@ class Space:
                     ax += total_force * dx / mass.mass
                     ay += total_force * dy / mass.mass
 
-        return ax, ay
+        damping_factor = 0.99  # REB: Attempt to stop explosions
+        return ax * damping_factor, ay * damping_factor
 
     def rk4_step(self):
         def derive(mass: Mass, dx: float, dy: float, dvx: float, dvy: float) -> Tuple[float, float, float, float]:
@@ -117,6 +122,8 @@ class Space:
             mass.y -= dy
             mass.vx -= dvx
             mass.vy -= dvy
+            ax = max(-1e4, min(1e4, ax))  # REB: Attempt to stop explosions
+            ay = max(-1e4, min(1e4, ay))  # REB: Attempt to stop explosions
             return mass.vx, mass.vy, ax, ay
 
         for mass in self.masses:
@@ -146,30 +153,31 @@ class Space:
                     mass.y = self.height - mass.radius
                     mass.vy *= -mass.elastic
 
+                mass.vx = max(-self.max_velocity, min(self.max_velocity, mass.vx))  # REB: No explosions
+                mass.vy = max(-self.max_velocity, min(self.max_velocity, mass.vy))  # REB: No explosions
+
     def update(self):
-        #for mass in self.masses:
-        #    if not mass.fixed:
-        #        # Apply gravity
-        #        mass.ay = self.gravity
-
         self.rk4_step()
+        self.enforce_constraints()  # REB: Code to reduce explosions
 
-        #for spring in self.springs:
-        #    dx = spring.mass2.x - spring.mass1.x
-        #    dy = spring.mass2.y - spring.mass1.y
-        #    distance = math.sqrt(dx * dx + dy * dy)
-        #    force = spring.ks * (distance - spring.restlen)
-
-        #    fx = force * dx / distance
-        #    fy = force * dy / distance
-
-        #    if not spring.mass1.fixed:
-        #        spring.mass1.ax += fx / spring.mass1.mass
-        #        spring.mass1.ay += fy / spring.mass1.mass
-
-        #    if not spring.mass2.fixed:
-        #        spring.mass2.ax -= fx / spring.mass2.mass
-        #        spring.mass2.ay -= fy / spring.mass2.mass
+    def enforce_constraints(self):
+        for spring in self.springs:
+            dx = spring.mass2.x - spring.mass1.x
+            dy = spring.mass2.y - spring.mass1.y
+            distance = math.sqrt(dx*dx + dy*dy)
+            if distance > 0:
+                factor = spring.restlen / distance
+                if not spring.mass1.fixed and not spring.mass2.fixed:
+                    spring.mass1.x += dx * (1 - factor) * 0.5
+                    spring.mass1.y += dy * (1 - factor) * 0.5
+                    spring.mass2.x += dx * (1 - factor) * 0.5
+                    spring.mass2.y += dy * (1 - factor) * 0.5
+                elif not spring.mass1.fixed:
+                    spring.mass1.x += dx * (1 - factor)
+                    spring.mass1.y += dy * (1 - factor)
+                elif not spring.mass2.fixed:
+                    spring.mass2.x += dx * (1 - factor)
+                    spring.mass2.y += dy * (1 - factor)
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
@@ -192,15 +200,25 @@ def load_xsp(filename: str) -> Space:
                     except ValueError as e:
                         print(f"Error parsing spring: {e}")
                 elif parts[0] == 'grav':
-                    space.gravity.enabled = True
-                    space.gravity.value = float(parts[1])
-                    space.gravity.misc = float(parts[2])
+                    space.gravity.enabled = int(parts[1]) != 0
+                    space.gravity.value = float(parts[2])
+                    space.gravity.misc = float(parts[3])
                 elif parts[0] == 'visc':
                     space.viscosity = float(parts[1])
                 elif parts[0] == 'cmass':
-                    space.center_mass.enabled = True
-                    space.center_mass.value = float(parts[1])
-                    space.center_mass.misc = float(parts[2])
+                    space.center_mass.enabled = int(parts[1]) != 0
+                    space.center_mass.value = float(parts[2])
+                    space.center_mass.misc = float(parts[3])
+                elif parts[0] == 'pntr':
+                    space.pointer_attraction.enabled = int(parts[1]) != 0
+                    space.pointer_attraction.value = float(parts[2])
+                    space.pointer_attraction.misc = float(parts[3])
+                elif parts[0] == 'wall':
+                    space.wall.enabled = int(parts[1]) != 0
+                    space.wall.value = float(parts[2])
+                    space.wall.misc = float(parts[3])
+                elif parts[0] == 'step':
+                    space.dt = float(parts[1])
                 # TODO - more parsing options here to add?
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
