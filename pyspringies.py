@@ -301,11 +301,11 @@ def main(xsp_file: str, integration_method: str):
     space = load_xsp(xsp_file)
     space.integration_method = integration_method
 
-    space.dt = min(0.01, space.dt)  # REB - reduce explosions
+    space.dt = min(0.02, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
 
-    for spring in space.springs:
-        spring.ks *= 0.5  # REB - reduce explosions
+    #for spring in space.springs:
+    #    spring.ks *= 0.5  # REB - reduce explosions
 
     running = True
     while running:
