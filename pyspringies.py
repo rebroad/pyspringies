@@ -112,7 +112,22 @@ class Space:
                 self.apply_boundaries(mass)
 
     def update(self):
-        if self.integration_method == "euler":
+        max_force = 0
+        max_velocity = 0
+        for mass in self.masses:
+            if not mass.fixed:
+                fx, fy = self.calculate_forces(mass)
+                force = math.sqrt(fx*fx + fy*fy)
+                velocity = math.sqrt(mass.vx*mass.vx + mass.vy*mass.vy)
+                max_force = max(max_force, force)
+                max_velocity = max(max_velocity, velocity)
+
+        print(f"Max force: {max_force:.2f}, Max velocity: {max_velocity:.2f}, dt: {self.dt:.6f}")
+
+        # Call the appropriate integration method
+        if self.adaptive_step:
+            self.adaptive_step_update()
+        elif self.integration_method == "euler":
             self.euler_step()
         elif self.integration_method == "rk4":
             self.rk4_step()
