@@ -49,7 +49,7 @@ class Space:
         self.viscosity = 0.0
         self.center_x = width / 2
         self.center_y = height / 2
-        self.max_velocity = 1000  # REB: Attempt to stop the explosions
+        self.max_velocity = 100  # REB: Attempt to stop the explosions
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = False
@@ -63,14 +63,11 @@ class Space:
             print(f"Warning: Invalid mass value {mass} for mass ID {id}. Setting radius to 1.")
             radius = 1
 
-        mass = max(0.1, min(100, mass))  # REB: Attempt to stop the explosions
         self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
         mass1 = next(m for m in self.masses if m.id == m1)
         mass2 = next(m for m in self.masses if m.id == m2)
-        ks = min(ks, 1000)  # REB: Attempt to stop the explosions
-        kd = min(kd, 10)    # REB: Attempt to stop the explosions
         self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
         if mass1 and mass2:
             self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
@@ -108,7 +105,8 @@ class Space:
                     ax += total_force * dx / mass.mass
                     ay += total_force * dy / mass.mass
 
-        damping_factor = 0.99  # REB: Attempt to stop explosions
+        damping_factor = 0.5  # REB: Attempt to stop explosions
+        #damping_factor = 1
         return ax * damping_factor, ay * damping_factor
 
     def rk4_step(self):
@@ -158,26 +156,6 @@ class Space:
 
     def update(self):
         self.rk4_step()
-        self.enforce_constraints()  # REB: Code to reduce explosions
-
-    def enforce_constraints(self):
-        for spring in self.springs:
-            dx = spring.mass2.x - spring.mass1.x
-            dy = spring.mass2.y - spring.mass1.y
-            distance = math.sqrt(dx*dx + dy*dy)
-            if distance > 0:
-                factor = spring.restlen / distance
-                if not spring.mass1.fixed and not spring.mass2.fixed:
-                    spring.mass1.x += dx * (1 - factor) * 0.5
-                    spring.mass1.y += dy * (1 - factor) * 0.5
-                    spring.mass2.x += dx * (1 - factor) * 0.5
-                    spring.mass2.y += dy * (1 - factor) * 0.5
-                elif not spring.mass1.fixed:
-                    spring.mass1.x += dx * (1 - factor)
-                    spring.mass1.y += dy * (1 - factor)
-                elif not spring.mass2.fixed:
-                    spring.mass2.x += dx * (1 - factor)
-                    spring.mass2.y += dy * (1 - factor)
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
