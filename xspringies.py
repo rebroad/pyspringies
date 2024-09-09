@@ -39,11 +39,17 @@ class Space:
         self.dt = 0.1
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
-        radius = int(2 * math.log(4.0 * mass + 1.0))
-        if radius < 1:
+        fixed = False
+        if mass < 0:
+            mass = abs(mass)
+            fixed = True
+
+        try:
+            radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
+        except ValueError:
+            print(f"Warning: Invalid mass value {mass} for mass ID {id}. Setting radius to 1.")
             radius = 1
-        elif radius > 64:
-            radius = 64
+
         self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius))
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
@@ -97,17 +103,31 @@ class Space:
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
-    with open(filename, 'r') as file:
-        for line in file:
-            parts = line.strip().split()
-            if not parts:
-                continue
-            if parts[0] == 'mass':
-                id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
-                space.add_mass(int(id), x, y, vx, vy, mass, elastic)
-            elif parts[0] == 'spng':
-                id, m1, m2, ks, kd, restlen = map(float, parts[1:])
-                space.add_spring(int(id), int(m1), int(m2), ks, kd, restlen)
+    try:
+        with open(filename, 'r') as file:
+            for line in file:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                if parts[0] == 'mass':
+                    try:
+                        id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
+                        space.add_mass(int(id), x, y, vx, vy, mass, elastic)
+                    except VallueError as e:
+                        print(f"Error parsing mass: {e}")
+                elif parts[0] == 'spng':
+                    try:
+                        id, m1, m2, ks, kd, restlen = map(float, parts[1:])
+                        space.add_spring(int(id), int(m1), int(m2), ks, kd, restlen)
+                    except ValueError as e:
+                        print(f"Error parsing spring: {e}")
+    except FileNotFoundError:
+        print(f"Error: File '{filename}' not found.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error loading file: {e}")
+        sys.exit(1)
+
     return space
 
 def main(xsp_file: str):
