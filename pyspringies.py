@@ -199,24 +199,29 @@ def load_xsp(filename: str) -> Space:
                         space.add_spring(int(id), int(m1), int(m2), ks, kd, restlen)
                     except ValueError as e:
                         print(f"Error parsing spring: {e}")
-                elif parts[0] == 'grav':
-                    space.gravity.enabled = int(parts[1]) != 0
-                    space.gravity.value = float(parts[2])
-                    space.gravity.misc = float(parts[3])
+                elif parts[0] == 'frce':
+                    try:
+                        force_type, enabled, value, misc = int(parts[1]), int(parts[2]), float(parts[3]), float(parts[4])
+                        if force_type == 0:  # Gravity
+                            space.gravity.enabled = enabled != 0
+                            space.gravity.value = value
+                            space.gravity.misc = misc
+                        elif force_type == 1:  # Center of Mass
+                            space.center_mass.enabled = enabled != 0
+                            space.center_mass.value = value
+                            space.center_mass.misc = misc
+                        elif force_type == 2:  # Pointer Attraction
+                            space.pointer_attraction_enabled = enabled != 0
+                            space.pointer_attraction.value = value
+                            space.pointer_attraction.misc = misc
+                        elif force_type == 3:  # Wall
+                            space.wall.enabled = enabled != 0
+                            space.wall.value = value
+                            space.wall.misc = misc
+                    except ValueError as e:
+                        print(f"Error parsing force: {e}")
                 elif parts[0] == 'visc':
                     space.viscosity = float(parts[1])
-                elif parts[0] == 'cmass':
-                    space.center_mass.enabled = int(parts[1]) != 0
-                    space.center_mass.value = float(parts[2])
-                    space.center_mass.misc = float(parts[3])
-                elif parts[0] == 'pntr':
-                    space.pointer_attraction.enabled = int(parts[1]) != 0
-                    space.pointer_attraction.value = float(parts[2])
-                    space.pointer_attraction.misc = float(parts[3])
-                elif parts[0] == 'wall':
-                    space.wall.enabled = int(parts[1]) != 0
-                    space.wall.value = float(parts[2])
-                    space.wall.misc = float(parts[3])
                 elif parts[0] == 'step':
                     space.dt = float(parts[1])
                 # TODO - more parsing options here to add?
