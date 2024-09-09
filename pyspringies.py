@@ -55,7 +55,7 @@ class Space:
         self.grid_snap = 20.0
         self.grid_snap_enabled = False
         self.default_mass = 1.0
-        self.default_elastic = 1.0
+        self.default_elasticity = 1.0
         self.default_ks = 1.0
         self.default_kd = 0.1
         self.fix_mass = False
@@ -66,9 +66,14 @@ class Space:
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = False
-        if mass < 0 or (self.fix_mass and mass > 0):
+        if mass < 0:
             mass = abs(mass)
             fixed = True
+
+        if mass == 0:
+            mass = self.default_mass
+        if elastic == 0:
+            elastic = self.default_elasticity
 
         radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
         self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
@@ -78,6 +83,10 @@ class Space:
         mass2 = next((m for m in self.masses if m.id == m2), None)
         self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
         if mass1 and mass2:
+            if ks == 0:
+                ks = self.default_ks
+            if kd == 0:
+                kd = self.default_kd
             self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
         else:
             print(f"Warning: Could not create spring {id}. Mass not found.")
@@ -177,7 +186,7 @@ def load_xsp(filename: str) -> Space:
                     try:
                         id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
                         space.add_mass(int(id), x, y, vx, vy, mass, elastic)
-                    except VallueError as e:
+                    except ValueError as e:
                         print(f"Error parsing mass: {e}")
                 elif parts[0] == 'spng':
                     try:
@@ -209,7 +218,7 @@ def load_xsp(filename: str) -> Space:
                 elif parts[0] == 'cmas':
                     space.default_mass = float(parts[1])
                 elif parts[0] == 'elas':
-                    space.default_elastic = float(parts[1])
+                    space.default_elasticity = float(parts[1])
                 elif parts[0] == 'kspr':
                     space.default_ks = float(parts[1])
                 elif parts[0] == 'kdmp':
