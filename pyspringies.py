@@ -202,6 +202,13 @@ def load_xsp(filename: str) -> Space:
                     space.viscosity = float(parts[1])
                 elif parts[0] == 'step':
                     space.dt = float(parts[1])
+                elif parts[0] == 'prec':
+                    space.precision = float(parts[1])
+                elif parts[0] == 'adpt':
+                    space.adaptive_step = int(parts[1]) != 0
+                elif parts[0] == 'gsnp':
+                    space.grid_snap = float(parts[1])
+                    space.grid_snap_enabled = int(parts[2]) != 0
                 # TODO - more parsing options here to add?
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
