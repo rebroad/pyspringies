@@ -4,7 +4,7 @@ import pygame
 import sys
 import math
 from dataclasses import dataclass
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 @dataclass
 class Mass:
@@ -47,8 +47,21 @@ class Space:
         self.pointer_attraction = Force()
         self.wall = Force()
         self.viscosity = 0.0
+        self.stickiness = 0.0
         self.center_x = width / 2
         self.center_y = height / 2
+        self.precision = 1.0
+        self.adaptive_step = False
+        self.grid_snap = 20.0
+        self.grid_snap_enabled = False
+        self.default_mass = 1.0
+        self.default_elastic = 1.0
+        self.default_ks = 1.0
+        self.default_kd = 0.1
+        self.fix_mass = False
+        self.show_springs = True
+        self.center_id = -1
+        self.walls = [False, False, False, False]  # top, left, right, bottom
         self.max_velocity = 100  # REB: Attempt to stop the explosions
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
