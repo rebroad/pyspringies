@@ -94,7 +94,7 @@ class Space:
         else:
             print(f"Warning: Could not create spring {id}. Mass not found.")
 
-    def rk4_step(self):
+    def rk4_step(self): # TODO - remove this
         for mass in self.masses:
             if not mass.fixed:
                 # RK4 implementation
@@ -139,12 +139,19 @@ class Space:
                 # Calculate forces
                 fx, fy = self.calculate_forces(mass)
 
-                fx = max(-self.max_force, min(self.max_force, fx))  # REB
-                fy = max(-self.max_force, min(self.max_force, fy))  # REB
+                # Cap forces - REB
+                fx = max(-self.max_force, min(self.max_force, fx))
+                fy = max(-self.max_force, min(self.max_force, fy))
 
                 # Update velocity
                 mass.vx += fx / mass.mass * self.dt
                 mass.vy += fy / mass.mass * self.dt
+
+                # Cap velocity - REB
+                speed = math.sqrt(mass.vx**2 + mass.vy**2)
+                if speed > self.max_velocity:
+                    mass.vx = mass.vx / speed * self.max_velocity
+                    mass.vy = mass.vy / speed * self.max_velocity
 
                 # Update position
                 mass.x += mass.vx * self.dt
@@ -214,9 +221,6 @@ class Space:
         elif mass.y > self.height - mass.radius:
             mass.y = self.height - mass.radius
             mass.vy *= -mass.elastic
-
-        mass.vx = max(-self.max_velocity, min(self.max_velocity, mass.vx))  # REB: No explosions
-        mass.vy = max(-self.max_velocity, min(self.max_velocity, mass.vy))  # REB: No explosions
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
