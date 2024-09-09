@@ -303,13 +303,11 @@ def load_xsp(filename: str) -> Space:
 
 def main(xsp_file: str, integration_method: str):
     pygame.init()
-    screen = pygame.display.set_mode((1024, 768))
-    clock = pygame.time.Clock()
 
     space = load_xsp(xsp_file)
     space.integration_method = integration_method
 
-    space.dt = min(0.02, space.dt)  # REB - reduce explosions
+    space.dt = min(0.015, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
 
     #for spring in space.springs:
