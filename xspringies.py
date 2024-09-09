@@ -30,7 +30,7 @@ class Spring:
     restlen: float
 
 class Force:
-    def __init__(self, enabledL bool = False, value: float = 0.0, misc: float = 0.0):
+    def __init__(self, enabled: bool = False, value: float = 0.0, misc: float = 0.0):
         self.enabled = enabled
         self.value = value
         self.misc = misc
@@ -92,9 +92,9 @@ class Space:
         ay -= self.viscosity * mass.vy
 
         for spring in self.springs:
-            if spring.mass1 = mass or spring.mass2 == mass:
-                other = spring.mass2 if spring.mass1 = mass else spring.mass1
-		dx = other.x - mass.x # TODO use a function instead that takes other.x,y and returns ax and ay
+            if spring.mass1 == mass or spring.mass2 == mass:
+                other = spring.mass2 if spring.mass1 == mass else spring.mass1
+                dx = other.x - mass.x # TODO use a function instead that takes other.x,y and returns ax and ay
                 dy = other.y - mass.y # TODO - this bit and the distance bit following is very similar to that which we did above for the self.center_y (and the sqrt below) can it be a function for this?
                 distance = math.sqrt(dx*dx + dy*dy) # TODO - add something here too?
                 if distance > 0:
@@ -102,7 +102,7 @@ class Space:
                     damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
                     total_force = (force - damp) / distance
                     ax += total_force * dx / mass.mass
-                    ay += total_force * dy / madd.mass
+                    ay += total_force * dy / mass.mass
 
         return ax, ay
 
@@ -129,7 +129,7 @@ class Space:
                 mass.x += self.dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6
                 mass.y += self.dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
                 mass.vx += self.dt * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2]) / 6
-                maxx.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
+                mass.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
 
                 # Simple boundary checking
                 if mass.x < mass.radius:
