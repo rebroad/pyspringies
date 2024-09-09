@@ -3,6 +3,7 @@
 import pygame
 import sys
 import math
+import argparse
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -63,6 +64,7 @@ class Space:
         self.center_id = -1
         self.walls = [False, False, False, False]  # top, left, right, bottom
         self.max_velocity = 100  # REB: Attempt to stop the explosions
+        self.integration_method = "euler"  # Default to Euler
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = False
@@ -91,11 +93,52 @@ class Space:
         else:
             print(f"Warning: Could not create spring {id}. Mass not found.")
 
-    def calculate_acceleration(self, mass: Mass) -> Tuple[float, float]:
-        ax, ay = 0, 0
+    def rk4_step(self):
+        for mass in self.masses:
+            if not mass.fixed:
+                # RK4 implementation
+                k1 = self.calculate_derivative(mass, 0, 0)
+                k2 = self.calculate_derivative(mass, k1[0]*self.dt/2, k1[1]*self.dt/2)
+                k3 = self.calculate_derivative(mass, k2[0]*self.dt/2, k2[1]*self.dt/2)
+                k4 = self.calculate_derivative(mass, k3[0]*self.dt, k3[1]*self.dt)
+
+                # Update position and velocity
+                mass.x += self.dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6
+                mass.y += self.dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
+                mass.vx += self.dt * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2]) / 6
+                mass.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
+
+                # Apply boundary conditions
+                self.apply_boundaries(mass)
+
+    def update(self):
+        if self.integration_method == "euler":
+            self.euler_step()
+        elif self.integration_method == "rk4":
+            self.rk4_step()
+
+    def euler_step(self):
+        for mass in self.masses:
+            if not mass.fixed:
+                # Calculate forces
+                fx, fy = self.calculate_forces(mass)
+
+                # Update velocity
+                mass.vx += fx / mass.mass * self.dt
+                mass.vy += fy / mass.mass * self.dt
+
+                # Update position
+                mass.x += mass.vx * self.dt
+                mass.y += mass.vy * self.dt
+
+                # Apply boundary conditions
+                self.apply_boundaries(mass)
+
+    def calculate_forces(self, mass):
+        fx, fy = 0, 0
 
         if self.gravity.enabled:
-            ay += self.gravity.value
+            fy += mass.mass * self.gravity.value
 
         if self.center_mass.enabled:
             dx = self.center_x - mass.x
@@ -103,11 +146,11 @@ class Space:
             dist = math.sqrt(dx*dx + dy*dy) # TODO - add something here to avoid divide by zero?
             if dist > 0:
                 force = self.center_mass.value / (dist ** self.center_mass.misc)
-                ax += force * dx / dist
-                ay += force * dy / dist
+                fx += force * dx / mass.mass
+                fy += force * dy / mass.mass
 
-        ax -= self.viscosity * mass.vx
-        ay -= self.viscosity * mass.vy
+        #ax -= self.viscosity * mass.vx
+        #ay -= self.viscosity * mass.vy
 
         for spring in self.springs:
             if spring.mass1 == mass or spring.mass2 == mass:
@@ -119,60 +162,36 @@ class Space:
                     force = spring.ks * (distance - spring.restlen)
                     damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
                     total_force = (force - damp) / distance
-                    ax += total_force * dx / mass.mass
-                    ay += total_force * dy / mass.mass
+                    fx += total_force * dx / mass.mass
+                    fy += total_force * dy / mass.mass
 
-        damping_factor = 0.5  # REB: Attempt to stop explosions
-        #damping_factor = 1
-        return ax * damping_factor, ay * damping_factor
+        return fx, fy
 
-    def rk4_step(self):
-        def derive(mass: Mass, dx: float, dy: float, dvx: float, dvy: float) -> Tuple[float, float, float, float]:
-            mass.x += dx
-            mass.y += dy
-            mass.vx += dvx
-            mass.vy += dvy
-            ax, ay = self.calculate_acceleration(mass)
-            mass.x -= dx
-            mass.y -= dy
-            mass.vx -= dvx
-            mass.vy -= dvy
-            ax = max(-1e4, min(1e4, ax))  # REB: Attempt to stop explosions
-            ay = max(-1e4, min(1e4, ay))  # REB: Attempt to stop explosions
-            return mass.vx, mass.vy, ax, ay
+    def calculate_derivative(self, mass, dx, dy):
+        original_x, original_y = mass.x, mass.y
+        mass.x += dx
+        mass.y += dy
+        fx, fy = self.calculate_forces(mass)
+        mass.x, mass.y = original_x, original_y
+        return mass.vx, mass.vy, fx / mass.mass, fy / mass.mass
 
-        for mass in self.masses:
-            if not mass.fixed:
-                k1 = derive(mass, 0, 0, 0, 0)
-                k2 = derive(mass, 0.5*self.dt*k1[0], 0.5*self.dt*k1[1], 0.5*self.dt*k1[2], 0.5*self.dt*k1[3])
-                k3 = derive(mass, 0.5*self.dt*k2[0], 0.5*self.dt*k2[1], 0.5*self.dt*k2[2], 0.5*self.dt*k2[3])
-                k4 = derive(mass, self.dt*k3[0], self.dt*k3[1], self.dt*k3[2], self.dt*k3[3]) # TODO - why no 0.5 multiplier here?
+    def apply_boundaries(self, mass):
+        if mass.x < mass.radius:
+            mass.x = mass.radius
+            mass.vx *= -mass.elastic
+        elif mass.x > self.width - mass.radius:
+            mass.x = self.width - mass.radius
+            mass.vx *= -mass.elastic
 
-                mass.x += self.dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6
-                mass.y += self.dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
-                mass.vx += self.dt * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2]) / 6
-                mass.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
+        if mass.y < mass.radius:
+            mass.y = mass.radius
+            mass.vy *= -mass.elastic
+        elif mass.y > self.height - mass.radius:
+            mass.y = self.height - mass.radius
+            mass.vy *= -mass.elastic
 
-                # Simple boundary checking
-                if mass.x < mass.radius:
-                    mass.x = mass.radius
-                    mass.vx *= -mass.elastic
-                elif mass.x > self.width - mass.radius:
-                    mass.x = self.width - mass.radius
-                    mass.vx *= -mass.elastic
-
-                if mass.y < mass.radius:
-                    mass.y = mass.radius
-                    mass.vy *= -mass.elastic
-                elif mass.y > self.height - mass.radius:
-                    mass.y = self.height - mass.radius
-                    mass.vy *= -mass.elastic
-
-                mass.vx = max(-self.max_velocity, min(self.max_velocity, mass.vx))  # REB: No explosions
-                mass.vy = max(-self.max_velocity, min(self.max_velocity, mass.vy))  # REB: No explosions
-
-    def update(self):
-        self.rk4_step()
+        mass.vx = max(-self.max_velocity, min(self.max_velocity, mass.vx))  # REB: No explosions
+        mass.vy = max(-self.max_velocity, min(self.max_velocity, mass.vy))  # REB: No explosions
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
@@ -253,12 +272,13 @@ def load_xsp(filename: str) -> Space:
 
     return space
 
-def main(xsp_file: str):
+def main(xsp_file: str, integration_method: str):
     pygame.init()
     screen = pygame.display.set_mode((800, 600))
     clock = pygame.time.Clock()
 
     space = load_xsp(xsp_file)
+    space.integration_method = integration_method
 
     space.dt = min(0.01, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
@@ -291,7 +311,10 @@ def main(xsp_file: str):
     pygame.quit()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python jspringies.py <xsp_file>")
-        sys.exit(1)
-    main(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Run PySpringies simulation.")
+    parser.add_argument("xsp_file", help="Path to the XSP file")
+    parser.add_argument("--method", choices=["euler", "rk4"], default="euler",
+                        help="Integretion method (default: euler)")
+    args = parser.parse_args()
+
+    main(args.xsp_file, args.method)
