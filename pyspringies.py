@@ -138,6 +138,7 @@ class Space:
 
     def update(self):
         forces = self.calculate_forces()
+        mask = ~self.masses['fixed']
         self.masses['vx'] += forces[:, 0] / self.masses['mass'] * self.dt
         self.masses['vy'] += forces[:, 1] / self.masses['mass'] * self.dt
         self.masses['x'] += self.masses['vx'] * self.dt
@@ -145,21 +146,32 @@ class Space:
         self.apply_boundaries()
 
     def apply_boundaries(self):
-        mask = self.masses['x'] < self.masses['radius']
-        self.masses['x'][mask] = self.masses['radius'][mask]
-        self.masses['vx'][mask] *= -self.masses['elastic'][mask]
+        mask = ~self.masses['fixed']
 
-        mask = self.masses['x'] > self.width - self.masses['radius']
-        self.masses['x'][mask] = self.width - self.masses['radius'][mask]
-        self.masses['vx'][mask] *= -self.masses['elastic'][mask]
+        # Bottom wall
+        if self.walls[3]:
+            bottom_mask = self.masses['y'] < self.masses['radius'] & mask
+        self.masses['y'][bottom_mask] = self.masses['radius'][bottom_mask]
+        self.masses['vy'][bottom_mask] *= -self.masses['elastic'][bottom_mask]
 
-        mask = self.masses['y'] < self.masses['radius']
-        self.masses['y'][mask] = self.masses['radius'][mask]
-        self.masses['vy'][mask] *= -self.masses['elastic'][mask]
+        # Top wall
+        if self.walls[0]:
+            top_mask = self.masses['y'] > self.height - self.masses['radius'] & mask
+            self.masses['y'][top_mask] = self.height - self.masses['radius'][top_mask]
+            self.masses['vy'][top_mask] *= -self.masses['elastic'][top_mask]
 
-        mask = self.masses['y'] > self.height - self.masses['radius']
-        self.masses['y'][mask] = self.height - self.masses['radius'][mask]
-        self.masses['vy'][mask] *= -self.masses['elastic'][mask]
+        # Left wall
+        if self.walls[1]:
+            left_mask = self.masses['x'] < self.masses['radius'] & mask
+            self.masses['x'][left_mask] = self.masses['radius'][left_mask]
+            self.masses['vx'][left_mask] *= -self.masses['elastic'][left_mask]
+
+        # Right wall
+        if self.walls[2]:
+            right_mask = self.masses['x'] > self.width - self.masses['radius'] & mask
+            self.masses['x'][right_mask] = self.width - self.masses['radius'][right_mask]
+            self.masses['vx'][right_mask] *= -self.masses['elastic'][right_mask]
+
 
     def calculate_derivative(self, mass, dx, dy):
         original_x, original_y = mass.x, mass.y
