@@ -301,8 +301,11 @@ def main(xsp_file: str):
 
         # Draw springs
         for spring in space.springs:
-            m1, m2 = spring['mass1'], spring['mass2']
-            pygame.draw.line(spring_surface, (255, 255, 255),
+            m1_index = np.where(space.masses['id'] == spring['mass1'])[0]
+            m2_index = np.where(space.masses['id'] == spring['mass2'])[0]
+            if len(m1_index) > 0 and len(m2_index) > 0:
+                m1, m2 = m1_index[0], m2_index[0]
+                pygame.draw.line(spring_surface, (255, 255, 255),
                              (int(space.masses['x'][m1]), int(space.height - space.masses['y'][m1])),
                              (int(space.masses['x'][m2]), int(space.height - space.masses['y'][m2])))
 
