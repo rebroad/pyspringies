@@ -5,6 +5,8 @@ import sys
 import math
 import argparse
 import numpy as np
+import cProfile
+import pstats
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -312,6 +314,9 @@ def load_xsp(filename: str) -> Space:
     return space
 
 def main(xsp_file: str, integration_method: str):
+    profiler = cProfile.Profile()
+    profiler.enable()
+
     pygame.init()
 
     space = load_xsp(xsp_file)
@@ -362,6 +367,10 @@ def main(xsp_file: str, integration_method: str):
         clock.tick(60)
 
     pygame.quit()
+
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats('cumulative')
+    stats.print_stats()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PySpringies simulation.")
