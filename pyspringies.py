@@ -4,9 +4,6 @@ import pygame
 import sys
 import math
 import argparse
-import numpy as np
-import cProfile
-import pstats
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -43,9 +40,8 @@ class Space:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        self.masses = np.zeros(0, dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), 
-                                         ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
-        self.springs = np.zeros(0, dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
+        self.masses: List[Mass] = []
+        self.springs: List[Spring] = []
         self.dt = 0.01
         self.gravity = Force()
         self.center_mass = Force()
@@ -69,63 +65,107 @@ class Space:
         self.walls = [False, False, False, False]  # top, left, right, bottom
         self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
+        self.integration_method = "euler"  # Default to Euler
 
-    def add_spring(self, id, m1_id, m2_id, ks, kd, restlen):
-        m1_index = np.where(self.masses['id'] == m1_id)[0]
-        m2_index = np.where(self.masses['id'] == m2_id)[0]
+    def add_mass(self, id, x, y, vx, vy, mass, elastic):
+        fixed = False
+        if mass < 0:
+            mass = abs(mass)
+            fixed = True
 
-        if len(m1_index) == 0 or len(m2_index) == 0:
-            print(f"Warning: Cannot add spring {id}. Mass not found.")
-            return
+        if mass == 0:
+            mass = self.default_mass
+        if elastic == 0:
+            elastic = self.default_elasticity
 
-        if ks == 0:
-            ks = self.default_ks
-        if kd == 0:
-            kd = self.default_kd
-        new_spring = np.array([(id, m1_id, m2_id, ks, kd, restlen)], dtype=self.springs.dtype)
-        self.springs = np.concatenate((self.springs, new_spring))
+        radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
+        self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
 
-    def calculate_forces(self):
-        forces = np.zeros((len(self.masses), 2))
+    def add_spring(self, id, m1, m2, ks, kd, restlen):
+        mass1 = next((m for m in self.masses if m.id == m1), None)
+        mass2 = next((m for m in self.masses if m.id == m2), None)
+        self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
+        if mass1 and mass2:
+            if ks == 0:
+                ks = self.default_ks
+            if kd == 0:
+                kd = self.default_kd
+            self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
+        else:
+            print(f"Warning: Could not create spring {id}. Mass not found.")
+
+    def rk4_step(self): # TODO - remove this
+        for mass in self.masses:
+            if not mass.fixed:
+                # RK4 implementation
+                k1 = self.calculate_derivative(mass, 0, 0)
+                k2 = self.calculate_derivative(mass, k1[0]*self.dt/2, k1[1]*self.dt/2)
+                k3 = self.calculate_derivative(mass, k2[0]*self.dt/2, k2[1]*self.dt/2)
+                k4 = self.calculate_derivative(mass, k3[0]*self.dt, k3[1]*self.dt)
+
+                # Update position and velocity
+                mass.x += self.dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6
+                mass.y += self.dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
+                mass.vx += self.dt * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2]) / 6
+                mass.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
+
+                # Apply boundary conditions
+                self.apply_boundaries(mass)
+
+    def update(self):
+        max_force = 0
+        max_velocity = 0
+        for mass in self.masses:
+            if not mass.fixed:
+                fx, fy = self.calculate_forces(mass)
+                force = math.sqrt(fx*fx + fy*fy)
+                velocity = math.sqrt(mass.vx*mass.vx + mass.vy*mass.vy)
+                max_force = max(max_force, force)
+                max_velocity = max(max_velocity, velocity)
+
+        print(f"Max force: {max_force:.2f}, Max velocity: {max_velocity:.2f}, dt: {self.dt:.6f}")
+
+        # Call the appropriate integration method
+        if self.adaptive_step:
+            self.adaptive_step_update()
+        elif self.integration_method == "euler":
+            self.euler_step()
+        elif self.integration_method == "rk4":
+            self.rk4_step()
+
+    def calculate_forces(self, mass):
+        fx, fy = 0, 0
 
         # Gravity
         if self.gravity.enabled:
-            forces[:, 1] += self.masses['mass'] * self.gravity.value
+            fy += mass.mass * self.gravity.value
 
         # Center of mass
         if self.center_mass.enabled:
-            dx = self.center_x - self.masses['x']
-            dy = self.center_y - self.masses['y']
-            dist = np.sqrt(dx**2 + dy**2)
-            mask = dist > 0
-            force = np.zeros_like(dist)
-            force[mask] = self.center_mass.value / (dist[mask] ** self.center_mass.misc)
-            forces[:, 0] += force * dx * self.masses['mass']
-            forces[:, 1] += force * dy * self.masses['mass']
+            dx = self.center_x - mass.x
+            dy = self.center_y - mass.y
+            dist = math.sqrt(dx*dx + dy*dy)
+            if dist > 0:
+                force = self.center_mass.value / (dist ** self.center_mass.misc)
+                fx += force * dx * mass.mass
+                fy += force * dy * mass.mass
 
-        # Viscosity
-        forces[:, 0] -= self.viscosity * self.masses['vx'] * self.masses['mass']
-        forces[:, 1] -= self.viscosity * self.masses['vy'] * self.masses['mass']
+        fx -= self.viscosity * mass.vx * mass.mass
+        fy -= self.viscosity * mass.vy * mass.mass
 
         # Spring forces
         for spring in self.springs:
-            m1_index = np.where(self.masses['id'] == spring['mass1'])[0]
-            m2_index = np.where(self.masses['id'] == spring['mass2'])[0]
-
-            if len(m1_index) > 0 and len(m2_index) > 0:
-                m1, m2 = m1_index[0], m2_index[0]
-                dx = self.masses['x'][m2] - self.masses['x'][m1]
-                dy = self.masses['y'][m2] - self.masses['y'][m1]
-                distance = np.sqrt(dx**2 + dy**2)
+            if spring.mass1 == mass or spring.mass2 == mass:
+                other = spring.mass2 if spring.mass1 == mass else spring.mass1
+                dx = other.x - mass.x
+                dy = other.y - mass.y
+                distance = math.sqrt(dx*dx + dy*dy)
                 if distance > 0:
-                    force = spring['ks'] * (distance - spring['restlen'])
-                    damp = spring['kd'] * ((self.masses['vx'][m2] - self.masses['vx'][m1])*dx +
-                                           (self.masses['vy'][m2] - self.masses['vy'][m1])*dy) / distance
+                    force = spring.ks * (distance - spring.restlen)
+                    damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
                     total_force = (force - damp) / distance
-                    forces[m1] += total_force * np.array([dx, dy])
-                    forces[m2] -= total_force * np.array([dx, dy])
-            else:
-                print(f"Warning: Invalid mass index in spring {spring['id']} (m1={m1}, m2={m2})")
+                    fx += total_force * dx / distance
+                    fy += total_force * dy / distance
 
         if self.pointer_attraction.enabled:
             pass  # TODO
@@ -133,54 +173,34 @@ class Space:
         if self.wall.enabled:
             pass  # TODO
 
-        return forces
+        return fx, fy
 
-    def update(self):
-        forces = self.calculate_forces()
-        mask = ~self.masses['fixed']
+    def euler_step(self):
+        for mass in self.masses:
+            if not mass.fixed:
+                # Calculate forces
+                fx, fy = self.calculate_forces(mass)
 
-        # Debug: Print max force
-        max_force = np.max(np.sqrt(np.sum(forces**2, axis=1)))
-        print(f"Max force: {max_force}")
+                # Cap forces - REB
+                fx = max(-self.max_force, min(self.max_force, fx))
+                fy = max(-self.max_force, min(self.max_force, fy))
 
-        self.masses['vx'] += forces[:, 0] / self.masses['mass'] * self.dt
-        self.masses['vy'] += forces[:, 1] / self.masses['mass'] * self.dt
+                # Update velocity
+                mass.vx += fx / mass.mass * self.dt
+                mass.vy += fy / mass.mass * self.dt
 
-        # Debug: Print max velocity
-        max_velocity = np.max(np.sqrt(self.masses['vx']**2 + self.masses['vy']**2))
-        print(f"Max velocity: {max_velocity}")
+                # Cap velocity - REB
+                speed = math.sqrt(mass.vx**2 + mass.vy**2)
+                if speed > self.max_velocity:
+                    mass.vx = mass.vx / speed * self.max_velocity
+                    mass.vy = mass.vy / speed * self.max_velocity
 
-        self.masses['x'] += self.masses['vx'] * self.dt
-        self.masses['y'] += self.masses['vy'] * self.dt
-        self.apply_boundaries()
+                # Update position
+                mass.x += mass.vx * self.dt
+                mass.y += mass.vy * self.dt
 
-    def apply_boundaries(self):
-        mask = ~self.masses['fixed']
-
-        # Bottom wall
-        if self.walls[3]:
-            bottom_mask = self.masses['y'] < self.masses['radius'] & mask
-        self.masses['y'][bottom_mask] = self.masses['radius'][bottom_mask]
-        self.masses['vy'][bottom_mask] *= -self.masses['elastic'][bottom_mask]
-
-        # Top wall
-        if self.walls[0]:
-            top_mask = self.masses['y'] > self.height - self.masses['radius'] & mask
-            self.masses['y'][top_mask] = self.height - self.masses['radius'][top_mask]
-            self.masses['vy'][top_mask] *= -self.masses['elastic'][top_mask]
-
-        # Left wall
-        if self.walls[1]:
-            left_mask = self.masses['x'] < self.masses['radius'] & mask
-            self.masses['x'][left_mask] = self.masses['radius'][left_mask]
-            self.masses['vx'][left_mask] *= -self.masses['elastic'][left_mask]
-
-        # Right wall
-        if self.walls[2]:
-            right_mask = self.masses['x'] > self.width - self.masses['radius'] & mask
-            self.masses['x'][right_mask] = self.width - self.masses['radius'][right_mask]
-            self.masses['vx'][right_mask] *= -self.masses['elastic'][right_mask]
-
+                # Apply boundary conditions
+                self.apply_boundaries(mass)
 
     def calculate_derivative(self, mass, dx, dy):
         original_x, original_y = mass.x, mass.y
@@ -190,39 +210,41 @@ class Space:
         mass.x, mass.y = original_x, original_y
         return mass.vx, mass.vy, fx / mass.mass, fy / mass.mass
 
-def mass_radius(mass):
-    return max(1, min(64, int(2 * np.log(4.0 * mass + 1.0))))
+    def apply_boundaries(self, mass):
+        if mass.x < mass.radius:
+            mass.x = mass.radius
+            mass.vx *= -mass.elastic
+        elif mass.x > self.width - mass.radius:
+            mass.x = self.width - mass.radius
+            mass.vx *= -mass.elastic
+
+        if mass.y < mass.radius:
+            mass.y = mass.radius
+            mass.vy *= -mass.elastic
+        elif mass.y > self.height - mass.radius:
+            mass.y = self.height - mass.radius
+            mass.vy *= -mass.elastic
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
     try:
         with open(filename, 'r') as file:
-            for line_number, line in enumerate(file, 1):
+            for line in file:
                 parts = line.strip().split()
                 if not parts or parts[0].startswith('#'):
                     continue
                 if parts[0] == 'mass':
                     try:
                         id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
-                        fixed = mass < 0
-                        mass = abs(mass)
-                        id = int(id)
-                        radius = mass_radius(mass)
-                        new_mass = np.array([(id, x, y, vx, vy, mass, elastic, radius, fixed)],
-                                            dtype=space.masses.dtype)
-                        space.masses = np.concatenate((space.masses, new_mass))
+                        space.add_mass(int(id), x, y, vx, vy, mass, elastic)
                     except ValueError as e:
-                        print(f"Error parsing mass on line {line_number}: {e}")
+                        print(f"Error parsing mass: {e}")
                 elif parts[0] == 'spng':
                     try:
                         id, m1, m2, ks, kd, restlen = map(float, parts[1:])
-                        m1, m2 = int(m1), int(m2)
-                        id = int(id)
-                        new_spring = np.array([(id, m1, m2, ks, kd, restlen)],
-                                              dtype=space.springs.dtype)
-                        space.springs = np.concatenate((space.springs, new_spring))
+                        space.add_spring(int(id), int(m1), int(m2), ks, kd, restlen)
                     except ValueError as e:
-                        print(f"Error parsing spring on line {line_number}: {e}")
+                        print(f"Error parsing spring: {e}")
                 elif parts[0] == 'frce':
                     try:
                         force_type, enabled, value, misc = int(parts[1]), int(parts[2]), float(parts[3]), float(parts[4])
@@ -275,60 +297,30 @@ def load_xsp(filename: str) -> Space:
                     space.walls = [int(x) != 0 for x in parts[1:5]]
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
-        return None
+        sys.exit(1)
     except Exception as e:
         print(f"Error loading file: {e}")
-        return None
-
-    if len(space.masses) == 0:
-        print("Warning: No masses loaded from the file.")
-    if len(space.springs) == 0:
-        print("Warning: No springs loaded from the file.")
+        sys.exit(1)
 
     return space
 
-def main(xsp_file: str):
-    profiler = cProfile.Profile()
-    profiler.enable()
-
+def main(xsp_file: str, integration_method: str):
     pygame.init()
-    space = load_xsp(xsp_file)
 
-    if space is None or len(space.masses) == 0:
-        print("Error: Failed to load valid simulation data.")
-        pygame.quit()
-        return
+    space = load_xsp(xsp_file)
+    space.integration_method = integration_method
 
     space.dt = min(0.015, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
 
-    print(f"Loaded {len(space.masses)} masses and {len(space.springs)} springs.")
-
-    # Calculate the bounding box of all masses
-    min_x = np.min(space.masses['x'])
-    max_x = np.max(space.masses['x'])
-    min_y = np.min(space.masses['y'])
-    max_y = np.max(space.masses['y'])
-
-    print(f"Bounding box: ({min_x}, {min_y}) to ({max_x}, {max_y})")
-
-    # Calculate scale and offset to fit the simulation in the window
-    scale = min(space.width / (max_x - min_x), space.height / (max_y - min_y)) * 0.9
-    offset_x = (space.width - (max_x - min_x) * scale) / 2
-    offset_y = (space.height - (max_y - min_y) * scale) / 2
-
-    print(f"Scale: {scale}, Offset: ({offset_x}, {offset_y})")
+    #for spring in space.springs:
+    #    spring.ks *= 0.5  # REB - reduce explosions
 
     # Set up the display
     screen = pygame.display.set_mode((space.width, space.height))
     clock = pygame.time.Clock()
 
-    # Pre-create surfaces for masses and springs
-    mass_surface = pygame.Surface((space.width, space.height), pygame.SRCALPHA)
-    spring_surface = pygame.Surface((space.width, space.height), pygame.SRCALPHA)
-
     running = True
-    frame_count = 0
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -338,48 +330,25 @@ def main(xsp_file: str):
 
         screen.fill((0, 0, 0))
 
-        # Clear surfaces
-        mass_surface.fill((0, 0, 0, 0))
-        spring_surface.fill((0, 0, 0, 0))
-
-        # Draw springs
         for spring in space.springs:
-            m1_index = np.where(space.masses['id'] == spring['mass1'])[0]
-            m2_index = np.where(space.masses['id'] == spring['mass2'])[0]
-            if len(m1_index) > 0 and len(m2_index) > 0:
-                m1, m2 = m1_index[0], m2_index[0]
-                pygame.draw.line(spring_surface, (255, 255, 255),
-                             (int(space.masses['x'][m1]), int(space.height - space.masses['y'][m1])),
-                             (int(space.masses['x'][m2]), int(space.height - space.masses['y'][m2])))
+            pygame.draw.line(screen, (255, 255, 255),
+                             (int(spring.mass1.x), int(space.height - spring.mass1.y)),
+                             (int(spring.mass2.x), int(space.height - spring.mass2.y)))
 
-        # Draw masses
         for mass in space.masses:
-            pygame.draw.circle(mass_surface, (255, 0, 0),
-                               (int(mass['x']), int(space.height - mass['y'])), mass['radius'])
-
-        # Blit surfaces to screen
-        screen.blit(spring_surface, (0, 0))
-        screen.blit(mass_surface, (0, 0))
+            pygame.draw.circle(screen, (255, 0, 0),
+                               (int(mass.x), int(space.height - mass.y)), mass.radius)
 
         pygame.display.flip()
         clock.tick(60)
 
-        frame_count += 1
-        if frame_count % 60 == 0:  # Print debug info every 60 frames
-            print(f"Frame {frame_count}")
-            print(f"Mass positions: Min ({np.min(space.masses['x'])}, {np.min(space.masses['y'])}), "
-                  f"Max ({np.max(space.masses['x'])}, {np.max(space.masses['y'])})")
-
-
     pygame.quit()
-
-    profiler.disable()
-    stats = pstats.Stats(profiler).sort_stats('cumulative')
-    stats.print_stats()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PySpringies simulation.")
     parser.add_argument("xsp_file", help="Path to the XSP file")
+    parser.add_argument("--method", choices=["euler", "rk4"], default="euler",
+                        help="Integration method (default: euler)")
     args = parser.parse_args()
 
-    main(args.xsp_file)
+    main(args.xsp_file, args.method)
