@@ -136,13 +136,15 @@ class Space:
     def calculate_forces(self, mass):
         fx, fy = 0, 0
 
+        # Gravity
         if self.gravity.enabled:
             fy += mass.mass * self.gravity.value
 
+        # Center of mass
         if self.center_mass.enabled:
             dx = self.center_x - mass.x
             dy = self.center_y - mass.y
-            dist = math.sqrt(dx*dx + dy*dy) # TODO - add something here to avoid divide by zero?
+            dist = math.sqrt(dx*dx + dy*dy)
             if dist > 0:
                 force = self.center_mass.value / (dist ** self.center_mass.misc)
                 fx += force * dx * mass.mass
@@ -151,12 +153,13 @@ class Space:
         fx -= self.viscosity * mass.vx * mass.mass
         fy -= self.viscosity * mass.vy * mass.mass
 
+        # Spring forces
         for spring in self.springs:
             if spring.mass1 == mass or spring.mass2 == mass:
                 other = spring.mass2 if spring.mass1 == mass else spring.mass1
                 dx = other.x - mass.x
                 dy = other.y - mass.y
-                distance = math.sqrt(dx*dx + dy*dy) # TODO - add something here too?
+                distance = math.sqrt(dx*dx + dy*dy)
                 if distance > 0:
                     force = spring.ks * (distance - spring.restlen)
                     damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
