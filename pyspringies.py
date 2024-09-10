@@ -113,18 +113,21 @@ class Space:
         # Spring forces
         for spring in self.springs:
             m1, m2 = spring['mass1'], spring['mass2']
-            dx = self.masses['x'][m2] - self.masses['x'][m1]
-            dy = self.masses['y'][m2] - self.masses['y'][m1]
-            distance = np.sqrt(dx**2 + dy**2)
-            if distance > 0:
-                force = spring['ks'] * (distance - spring['restlen'])
-                damp = spring['kd'] * ((self.masses['vx'][m2] - self.masses['vx'][m1])*dx +
-                                       (self.masses['vy'][m2] - self.masses['vy'][m1])*dy) / distance
-                total_force = (force - damp) / distance
-                forces[m1, 0] += total_force * dx
-                forces[m1, 1] += total_force * dy
-                forces[m2, 0] -= total_force * dx
-                forces[m2, 1] -= total_force * dy
+            if m1 < len(self.masses) and m2 < len(self.masses):
+                dx = self.masses['x'][m2] - self.masses['x'][m1]
+                dy = self.masses['y'][m2] - self.masses['y'][m1]
+                distance = np.sqrt(dx**2 + dy**2)
+                if distance > 0:
+                    force = spring['ks'] * (distance - spring['restlen'])
+                    damp = spring['kd'] * ((self.masses['vx'][m2] - self.masses['vx'][m1])*dx +
+                                           (self.masses['vy'][m2] - self.masses['vy'][m1])*dy) / distance
+                    total_force = (force - damp) / distance
+                    forces[m1, 0] += total_force * dx
+                    forces[m1, 1] += total_force * dy
+                    forces[m2, 0] -= total_force * dx
+                    forces[m2, 1] -= total_force * dy
+            else:
+                print(f"Warning: Invalid mass index in spring {spring['id']}")
 
         if self.pointer_attraction.enabled:
             pass  # TODO
@@ -184,7 +187,11 @@ def load_xsp(filename: str) -> Space:
                 elif parts[0] == 'spng':
                     try:
                         id, m1, m2, ks, kd, restlen = map(float, parts[1:])
-                        space.add_spring(int(id), int(m1), int(m2), ks, kd, restlen)
+                        id, m1, m2 = int(id), int(m1), int(m2)
+                        if m1 < len(space.masses) and m2 < len(space.masses):
+                            space.add_spring(id, m1, m2, ks, kd, restlen)
+                        else:
+                            print(f"Warning: Invalid mass index in spring {id}")
                     except ValueError as e:
                         print(f"Error parsing spring: {e}")
                 elif parts[0] == 'frce':
@@ -246,13 +253,17 @@ def load_xsp(filename: str) -> Space:
 
     return space
 
-def main(xsp_file: str, integration_method: str):
+def main(xsp_file: str):
     profiler = cProfile.Profile()
     profiler.enable()
 
     pygame.init()
     space = load_xsp(xsp_file)
-    space.integration_method = integration_method
+
+    if len(space.masses) == 0:
+        print("Error: No masses loaded from the XSP file.")
+        pygame.quit()
+        return
 
     space.dt = min(0.015, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
@@ -312,4 +323,4 @@ if __name__ == "__main__":
     parser.add_argument("xsp_file", help="Path to the XSP file")
     args = parser.parse_args()
 
-    main(args.xsp_file, args.method)
+    main(args.xsp_file)
