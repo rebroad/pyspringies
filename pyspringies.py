@@ -70,6 +70,19 @@ class Space:
         self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
 
+
+    def add_spring(self, id, m1_id, m2_id, ks, kd, restlen):
+        m1_index = np.where(self.masses['id'] == m1_id)[0]
+        m2_index = np.where(self.masses['id'] == m2_id)[0]
+
+        if len(m1_index) == 0 or len(m2_index) == 0:
+            print(f"Warning: Cannot add spring {id}. Mass not found.")
+            return
+
+        new_spring = np.array([(id, m1_id, m2_id, ks, kd, restlen)], dtype=self.springs.dtype)
+        self.springs = np.concatenate((self.springs, new_spring))
+
+
     def calculate_forces(self):
         forces = np.zeros((len(self.masses), 2))
 
@@ -94,8 +107,11 @@ class Space:
 
         # Spring forces
         for spring in self.springs:
-            m1, m2 = spring['mass1'], spring['mass2']
-            if 0 <= m1 < len(self.masses) and 0 <= m2 < len(self.masses):
+            m1_index = np.where(self.masses['id'] == spring['mass1'])[0]
+            m2_index = np.where(self.masses['id'] == spring['mass2'])[0]
+
+            if len(m1_index) > 0 and len(m2_index) > 0:
+                m1, m2 = m1_index[0], m2_index[0]
                 dx = self.masses['x'][m2] - self.masses['x'][m1]
                 dy = self.masses['y'][m2] - self.masses['y'][m1]
                 distance = np.sqrt(dx**2 + dy**2)
