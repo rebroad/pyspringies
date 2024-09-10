@@ -68,7 +68,6 @@ class Space:
         self.walls = [False, False, False, False]  # top, left, right, bottom
         self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
-        self.integration_method = "euler"  # Default to Euler
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
         fixed = mass < 0
@@ -79,7 +78,7 @@ class Space:
             elastic = self.default_elasticity
         radius = max(1, min(64, int(2 * np.log(4.0 * mass + 1.0))))
         new_mass = np.array([(id, x, y, vx, vy, mass, elastic, radius, fixed)], dtype=self.masses.dtype)
-        self.masses = np.append(self.masses, new_mass)
+        self.masses = np.vstack((self.masses, new_mass))
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
         if ks == 0:
@@ -87,25 +86,7 @@ class Space:
         if kd == 0:
             kd = self.default_kd
         new_spring = np.array([(id, m1, m2, ks, kd, restlen)], dtype=self.springs.dtype)
-        self.springs = np.append(self.springs, new_spring)
-
-    def rk4_step(self): # TODO - remove this?
-        for mass in self.masses:
-            if not mass['fixed']:
-                # RK4 implementation
-                k1 = self.calculate_derivative(mass, 0, 0)
-                k2 = self.calculate_derivative(mass, k1[0]*self.dt/2, k1[1]*self.dt/2)
-                k3 = self.calculate_derivative(mass, k2[0]*self.dt/2, k2[1]*self.dt/2)
-                k4 = self.calculate_derivative(mass, k3[0]*self.dt, k3[1]*self.dt)
-
-                # Update position and velocity
-                mass.x += self.dt * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6
-                mass.y += self.dt * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
-                mass.vx += self.dt * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2]) / 6
-                mass.vy += self.dt * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3]) / 6
-
-                # Apply boundary conditions
-                self.apply_boundaries(mass)
+        self.springs = np.vstack((self.springs, new_spring))
 
     def calculate_forces(self):
         forces = np.zeros((len(self.masses), 2))
@@ -177,33 +158,6 @@ class Space:
         mask = self.masses['y'] > self.height - self.masses['radius']
         self.masses['y'][mask] = self.height - self.masses['radius'][mask]
         self.masses['vy'][mask] *= -self.masses['elastic'][mask]
-
-    def euler_step(self):
-        for mass in self.mass_data:
-            if not mass[4]:  # mass[4] is fixed
-                # Calculate forces
-                fx, fy = self.calculate_forces(mass)
-
-                # Cap forces - REB
-                fx = max(-self.max_force, min(self.max_force, fx))
-                fy = max(-self.max_force, min(self.max_force, fy))
-
-                # Update velocity
-                mass.vx += fx / mass.mass * self.dt
-                mass.vy += fy / mass.mass * self.dt
-
-                # Cap velocity - REB
-                speed = math.sqrt(mass.vx**2 + mass.vy**2)
-                if speed > self.max_velocity:
-                    mass.vx = mass.vx / speed * self.max_velocity
-                    mass.vy = mass.vy / speed * self.max_velocity
-
-                # Update position
-                mass.x += mass.vx * self.dt
-                mass.y += mass.vy * self.dt
-
-                # Apply boundary conditions
-                self.apply_boundaries(mass)
 
     def calculate_derivative(self, mass, dx, dy):
         original_x, original_y = mass.x, mass.y
@@ -356,8 +310,6 @@ def main(xsp_file: str, integration_method: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PySpringies simulation.")
     parser.add_argument("xsp_file", help="Path to the XSP file")
-    parser.add_argument("--method", choices=["euler", "rk4"], default="euler",
-                        help="Integration method (default: euler)")
     args = parser.parse_args()
 
     main(args.xsp_file, args.method)
