@@ -327,6 +327,10 @@ def main(xsp_file: str, integration_method: str):
     screen = pygame.display.set_mode((space.width, space.height))
     clock = pygame.time.Clock()
 
+    # Pre-create surfaces for masses and springs
+    mass_surface = pygame.Surface((space.width, space.height), pygame.SRCALPHA)
+    spring_surface = pygame.Surface((space.width, space.height), pygame.SRCALPHA)
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -337,14 +341,22 @@ def main(xsp_file: str, integration_method: str):
 
         screen.fill((0, 0, 0))
 
+        # Clear surfaces
+        mass_surface.fill((0, 0, 0, 0))
+        spring_surface.fill((0, 0, 0, 0))
+
         for spring in space.springs:
-            pygame.draw.line(screen, (255, 255, 255),
+            pygame.draw.line(spring_surface, (255, 255, 255),
                              (int(spring.mass1.x), int(space.height - spring.mass1.y)),
                              (int(spring.mass2.x), int(space.height - spring.mass2.y)))
 
         for mass in space.masses:
-            pygame.draw.circle(screen, (255, 0, 0),
+            pygame.draw.circle(mass_surface, (255, 0, 0),
                                (int(mass.x), int(space.height - mass.y)), mass.radius)
+
+        # Blit surfaces to screen
+        screen.blit(spring_surface, (0, 0))
+        screen.blit(mass_surface, (0, 0))
 
         pygame.display.flip()
         clock.tick(60)
