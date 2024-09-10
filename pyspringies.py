@@ -70,7 +70,6 @@ class Space:
         self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
 
-
     def add_spring(self, id, m1_id, m2_id, ks, kd, restlen):
         m1_index = np.where(self.masses['id'] == m1_id)[0]
         m2_index = np.where(self.masses['id'] == m2_id)[0]
@@ -79,9 +78,12 @@ class Space:
             print(f"Warning: Cannot add spring {id}. Mass not found.")
             return
 
+        if ks == 0:
+            ks = self.default_ks
+        if kd == 0:
+            kd = self.default_kd
         new_spring = np.array([(id, m1_id, m2_id, ks, kd, restlen)], dtype=self.springs.dtype)
         self.springs = np.concatenate((self.springs, new_spring))
-
 
     def calculate_forces(self):
         forces = np.zeros((len(self.masses), 2))
@@ -300,7 +302,7 @@ def main(xsp_file: str):
     space.dt = min(0.015, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
 
-    printf("Loaded {len(space.masses)} masses and {len(space.springs)} springs.")
+    print(f"Loaded {len(space.masses)} masses and {len(space.springs)} springs.")
 
     # Calculate the bounding box of all masses
     min_x = np.min(space.masses['x'])
