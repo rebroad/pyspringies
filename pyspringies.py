@@ -136,8 +136,18 @@ class Space:
     def update(self):
         forces = self.calculate_forces()
         mask = ~self.masses['fixed']
+
+        # Debug: Print max force
+        max_force = np.max(np.sqrt(np.sum(forces**2, axis=1)))
+        print(f"Max force: {max_force}")
+
         self.masses['vx'] += forces[:, 0] / self.masses['mass'] * self.dt
         self.masses['vy'] += forces[:, 1] / self.masses['mass'] * self.dt
+
+        # Debug: Print max velocity
+        max_velocity = np.max(np.sqrt(self.masses['vx']**2 + self.masses['vy']**2))
+        print(f"Max velocity: {max_velocity}")
+
         self.masses['x'] += self.masses['vx'] * self.dt
         self.masses['y'] += self.masses['vy'] * self.dt
         self.apply_boundaries()
@@ -290,8 +300,22 @@ def main(xsp_file: str):
     space.dt = min(0.015, space.dt)  # REB - reduce explosions
     space.gravity.value = min(2.0, space.gravity.value)  # REB - reduce explosions
 
-    #for spring in space.springs:
-    #    spring.ks *= 0.5  # REB - reduce explosions
+    printf("Loaded {len(space.masses)} masses and {len(space.springs)} springs.")
+
+    # Calculate the bounding box of all masses
+    min_x = np.min(space.masses['x'])
+    max_x = np.max(space.masses['x'])
+    min_y = np.min(space.masses['y'])
+    max_y = np.max(space.masses['y'])
+
+    print(f"Bounding box: ({min_x}, {min_y}) to ({max_x}, {max_y})")
+
+    # Calculate scale and offset to fit the simulation in the window
+    scale = min(space.width / (max_x - min_x), space.height / (max_y - min_y)) * 0.9
+    offset_x = (space.width - (max_x - min_x) * scale) / 2
+    offset_y = (space.height - (max_y - min_y) * scale) / 2
+
+    print(f"Scale: {scale}, Offset: ({offset_x}, {offset_y})")
 
     # Set up the display
     screen = pygame.display.set_mode((space.width, space.height))
@@ -302,6 +326,7 @@ def main(xsp_file: str):
     spring_surface = pygame.Surface((space.width, space.height), pygame.SRCALPHA)
 
     running = True
+    frame_count = 0
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -336,6 +361,13 @@ def main(xsp_file: str):
 
         pygame.display.flip()
         clock.tick(60)
+
+        frame_count += 1
+        if frame_count % 60 == 0:  # Print debug info every 60 frames
+            print(f"Frame {frame_count}")
+            print(f"Mass positions: Min ({np.min(space.masses['x'])}, {np.min(space.masses['y'])}), "
+                  f"Max ({np.max(space.masses['x'])}, {np.max(space.masses['y'])})")
+
 
     pygame.quit()
 
