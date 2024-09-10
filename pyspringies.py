@@ -4,6 +4,7 @@ import pygame
 import sys
 import math
 import argparse
+import numpy as np
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -41,7 +42,9 @@ class Space:
         self.width = width
         self.height = height
         self.masses: List[Mass] = []
-        self.springs: List[Spring] = []
+        self.springs: List[Springs] = []
+        #self.masses = np.empty(0, dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), ('ax', float), ('ay', float), ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
+        #self.springs = np.empty(0, dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
         self.dt = 0.01
         self.gravity = Force()
         self.center_mass = Force()
@@ -80,11 +83,15 @@ class Space:
 
         radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
         self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
+        #new_mass = np.array([(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed)], dtype=self.masses.dtype)
+        #self.masses = np.append(self.masses, new_mass)
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
         mass1 = next((m for m in self.masses if m.id == m1), None)
         mass2 = next((m for m in self.masses if m.id == m2), None)
         self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
+        #new_spring = np.array([(id, m1, m2, ks, kd, restlen)], dtype=self.springs.dtype)
+        #self.springs = np.append(self.springs, new_spring)
         if mass1 and mass2:
             if ks == 0:
                 ks = self.default_ks
