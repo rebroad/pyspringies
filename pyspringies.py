@@ -43,8 +43,9 @@ class Space:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        self.masses = np.zeros((0, 11), dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
-        self.springs = np.zeros((0, 6), dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
+        self.masses = np.zeros(0, dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), 
+                                         ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
+        self.springs = np.zeros(0, dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
         self.dt = 0.01
         self.gravity = Force()
         self.center_mass = Force()
@@ -113,7 +114,7 @@ class Space:
         # Spring forces
         for spring in self.springs:
             m1, m2 = spring['mass1'], spring['mass2']
-            if m1 < len(self.masses) and m2 < len(self.masses):
+            if 0 <= m1 < len(self.masses) and 0 <= m2 < len(self.masses):
                 dx = self.masses['x'][m2] - self.masses['x'][m1]
                 dy = self.masses['y'][m2] - self.masses['y'][m1]
                 distance = np.sqrt(dx**2 + dy**2)
@@ -122,12 +123,10 @@ class Space:
                     damp = spring['kd'] * ((self.masses['vx'][m2] - self.masses['vx'][m1])*dx +
                                            (self.masses['vy'][m2] - self.masses['vy'][m1])*dy) / distance
                     total_force = (force - damp) / distance
-                    forces[m1, 0] += total_force * dx
-                    forces[m1, 1] += total_force * dy
-                    forces[m2, 0] -= total_force * dx
-                    forces[m2, 1] -= total_force * dy
+                    forces[m1] += total_force * np.array([dx, dy])
+                    forces[m2] -= total_force * np.array([dx, dy])
             else:
-                print(f"Warning: Invalid mass index in spring {spring['id']}")
+                print(f"Warning: Invalid mass index in spring {spring['id']} (m1={m1}, m2={m2})")
 
         if self.pointer_attraction.enabled:
             pass  # TODO
@@ -174,7 +173,7 @@ def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
     try:
         with open(filename, 'r') as file:
-            for line in file:
+            for line_number, line in enumerate(file, 1):
                 parts = line.strip().split()
                 if not parts or parts[0].startswith('#'):
                     continue
@@ -183,17 +182,17 @@ def load_xsp(filename: str) -> Space:
                         id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
                         space.add_mass(int(id), x, y, vx, vy, mass, elastic)
                     except ValueError as e:
-                        print(f"Error parsing mass: {e}")
+                        print(f"Error parsing mass on line {line_number}: {e}")
                 elif parts[0] == 'spng':
                     try:
                         id, m1, m2, ks, kd, restlen = map(float, parts[1:])
-                        id, m1, m2 = int(id), int(m1), int(m2)
-                        if m1 < len(space.masses) and m2 < len(space.masses):
-                            space.add_spring(id, m1, m2, ks, kd, restlen)
+                        m1, m2 = int(m1), int(m2)
+                        if 0 <= m1 < len(space.masses) and 0 <= m2 < len(space.masses):
+                            space.add_spring(int(id), m1, m2, ks, kd, restlen)
                         else:
-                            print(f"Warning: Invalid mass index in spring {id}")
+                            print(f"Warning on line {line_number}: Invalid mass index in spring {int(id)} (m1={m1}, m2={m2})")
                     except ValueError as e:
-                        print(f"Error parsing spring: {e}")
+                        print(f"Error parsing spring on line {line_number}: {e}")
                 elif parts[0] == 'frce':
                     try:
                         force_type, enabled, value, misc = int(parts[1]), int(parts[2]), float(parts[3]), float(parts[4])
@@ -246,10 +245,15 @@ def load_xsp(filename: str) -> Space:
                     space.walls = [int(x) != 0 for x in parts[1:5]]
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
-        sys.exit(1)
+        return None
     except Exception as e:
         print(f"Error loading file: {e}")
-        sys.exit(1)
+        return None
+
+    if len(space.masses) == 0:
+        print("Warning: No masses loaded from the file.")
+    if len(space.springs) == 0:
+        print("Warning: No springs loaded from the file.")
 
     return space
 
@@ -260,8 +264,8 @@ def main(xsp_file: str):
     pygame.init()
     space = load_xsp(xsp_file)
 
-    if len(space.masses) == 0:
-        print("Error: No masses loaded from the XSP file.")
+    if space is None or len(space.masses) == 0:
+        print("Error: Failed to load valid simulation data.")
         pygame.quit()
         return
 
