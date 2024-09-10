@@ -43,10 +43,8 @@ class Space:
     def __init__(self, width, height):
         self.width = width
         self.height = height
-        self.masses: List[Mass] = []
-        self.springs: List[Springs] = []
-        #self.masses = np.empty(0, dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), ('ax', float), ('ay', float), ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
-        #self.springs = np.empty(0, dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
+        self.masses = np.zeros((0, 11), dtype=[('id', int), ('x', float), ('y', float), ('vx', float), ('vy', float), ('mass', float), ('elastic', float), ('radius', int), ('fixed', bool)])
+        self.springs = np.zeros((0, 6), dtype=[('id', int), ('mass1', int), ('mass2', int), ('ks', float), ('kd', float), ('restlen', float)])
         self.dt = 0.01
         self.gravity = Force()
         self.center_mass = Force()
@@ -73,39 +71,27 @@ class Space:
         self.integration_method = "euler"  # Default to Euler
 
     def add_mass(self, id, x, y, vx, vy, mass, elastic):
-        fixed = False
-        if mass < 0:
-            mass = abs(mass)
-            fixed = True
-
+        fixed = mass < 0
+        mass = abs(mass)
         if mass == 0:
             mass = self.default_mass
         if elastic == 0:
             elastic = self.default_elasticity
-
-        radius = max(1, min(64, int(2 * math.log(4.0 * mass + 1.0))))
-        self.masses.append(Mass(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed))
-        #new_mass = np.array([(id, x, y, vx, vy, 0, 0, mass, elastic, radius, fixed)], dtype=self.masses.dtype)
-        #self.masses = np.append(self.masses, new_mass)
+        radius = max(1, min(64, int(2 * np.log(4.0 * mass + 1.0))))
+        new_mass = np.array([(id, x, y, vx, vy, mass, elastic, radius, fixed)], dtype=self.masses.dtype)
+        self.masses = np.append(self.masses, new_mass)
 
     def add_spring(self, id, m1, m2, ks, kd, restlen):
-        mass1 = next((m for m in self.masses if m.id == m1), None)
-        mass2 = next((m for m in self.masses if m.id == m2), None)
-        self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
-        #new_spring = np.array([(id, m1, m2, ks, kd, restlen)], dtype=self.springs.dtype)
-        #self.springs = np.append(self.springs, new_spring)
-        if mass1 and mass2:
-            if ks == 0:
-                ks = self.default_ks
-            if kd == 0:
-                kd = self.default_kd
-            self.springs.append(Spring(id, mass1, mass2, ks, kd, restlen))
-        else:
-            print(f"Warning: Could not create spring {id}. Mass not found.")
+        if ks == 0:
+            ks = self.default_ks
+        if kd == 0:
+            kd = self.default_kd
+        new_spring = np.array([(id, m1, m2, ks, kd, restlen)], dtype=self.springs.dtype)
+        self.springs = np.append(self.springs, new_spring)
 
-    def rk4_step(self): # TODO - remove this
+    def rk4_step(self): # TODO - remove this?
         for mass in self.masses:
-            if not mass.fixed:
+            if not mass['fixed']:
                 # RK4 implementation
                 k1 = self.calculate_derivative(mass, 0, 0)
                 k2 = self.calculate_derivative(mass, k1[0]*self.dt/2, k1[1]*self.dt/2)
@@ -121,60 +107,43 @@ class Space:
                 # Apply boundary conditions
                 self.apply_boundaries(mass)
 
-    def update(self):
-        max_force = 0
-        max_velocity = 0
-        for mass in self.masses:
-            if not mass.fixed:
-                fx, fy = self.calculate_forces(mass)
-                force = math.sqrt(fx*fx + fy*fy)
-                velocity = math.sqrt(mass.vx*mass.vx + mass.vy*mass.vy)
-                max_force = max(max_force, force)
-                max_velocity = max(max_velocity, velocity)
-
-        print(f"Max force: {max_force:.2f}, Max velocity: {max_velocity:.2f}, dt: {self.dt:.6f}")
-
-        # Call the appropriate integration method
-        if self.adaptive_step:
-            self.adaptive_step_update()
-        elif self.integration_method == "euler":
-            self.euler_step()
-        elif self.integration_method == "rk4":
-            self.rk4_step()
-
-    def calculate_forces(self, mass):
-        fx, fy = 0, 0
+    def calculate_forces(self):
+        forces = np.zeros((len(self.masses), 2))
 
         # Gravity
         if self.gravity.enabled:
-            fy += mass.mass * self.gravity.value
+            forces[:, 1] += self.masses['mass'] * self.gravity.value
 
         # Center of mass
         if self.center_mass.enabled:
-            dx = self.center_x - mass.x
-            dy = self.center_y - mass.y
-            dist = math.sqrt(dx*dx + dy*dy)
-            if dist > 0:
-                force = self.center_mass.value / (dist ** self.center_mass.misc)
-                fx += force * dx * mass.mass
-                fy += force * dy * mass.mass
+            dx = self.center_x - self.masses['x']
+            dy = self.center_y - self.masses['y']
+            dist = np.sqrt(dx**2 + dy**2)
+            mask = dist > 0
+            force = np.zeros_like(dist)
+            force[mask] = self.center_mass.value / (dist[mask] ** self.center_mass.misc)
+            forces[:, 0] += force * dx * self.masses['mass']
+            forces[:, 1] += force * dy * self.masses['mass']
 
-        fx -= self.viscosity * mass.vx * mass.mass
-        fy -= self.viscosity * mass.vy * mass.mass
+        # Viscosity
+        forces[:, 0] -= self.viscosity * self.masses['vx'] * self.masses['mass']
+        forces[:, 1] -= self.viscosity * self.masses['vy'] * self.masses['mass']
 
         # Spring forces
         for spring in self.springs:
-            if spring.mass1 == mass or spring.mass2 == mass:
-                other = spring.mass2 if spring.mass1 == mass else spring.mass1
-                dx = other.x - mass.x
-                dy = other.y - mass.y
-                distance = math.sqrt(dx*dx + dy*dy)
-                if distance > 0:
-                    force = spring.ks * (distance - spring.restlen)
-                    damp = spring.kd * ((other.vx - mass.vx)*dx + (other.vy - mass.vy)*dy) / distance
-                    total_force = (force - damp) / distance
-                    fx += total_force * dx / distance
-                    fy += total_force * dy / distance
+            m1, m2 = spring['mass1'], spring['mass2']
+            dx = self.masses['x'][m2] - self.masses['x'][m1]
+            dy = self.masses['y'][m2] - self.masses['y'][m1]
+            distance = np.sqrt(dx**2 + dy**2)
+            if distance > 0:
+                force = spring['ks'] * (distance - spring['restlen'])
+                damp = spring['kd'] * ((self.masses['vx'][m2] - self.masses['vx'][m1])*dx +
+                                       (self.masses['vy'][m2] - self.masses['vy'][m1])*dy) / distance
+                total_force = (force - damp) / distance
+                forces[m1, 0] += total_force * dx
+                forces[m1, 1] += total_force * dy
+                forces[m2, 0] -= total_force * dx
+                forces[m2, 1] -= total_force * dy
 
         if self.pointer_attraction.enabled:
             pass  # TODO
@@ -182,11 +151,36 @@ class Space:
         if self.wall.enabled:
             pass  # TODO
 
-        return fx, fy
+        return forces
+
+    def update(self):
+        forces = self.calculate_forces()
+        self.masses['vx'] += forces[:, 0] / self.masses['mass'] * self.dt
+        self.masses['vy'] += forces[:, 1] / self.masses['mass'] * self.dt
+        self.masses['x'] += self.masses['vx'] * self.dt
+        self.masses['y'] += self.masses['vy'] * self.dt
+        self.apply_boundaries()
+
+    def apply_boundaries(self):
+        mask = self.masses['x'] < self.masses['radius']
+        self.masses['x'][mask] = self.masses['radius'][mask]
+        self.masses['vx'][mask] *= -self.masses['elastic'][mask]
+
+        mask = self.masses['x'] > self.width - self.masses['radius']
+        self.masses['x'][mask] = self.width - self.masses['radius'][mask]
+        self.masses['vx'][mask] *= -self.masses['elastic'][mask]
+
+        mask = self.masses['y'] < self.masses['radius']
+        self.masses['y'][mask] = self.masses['radius'][mask]
+        self.masses['vy'][mask] *= -self.masses['elastic'][mask]
+
+        mask = self.masses['y'] > self.height - self.masses['radius']
+        self.masses['y'][mask] = self.height - self.masses['radius'][mask]
+        self.masses['vy'][mask] *= -self.masses['elastic'][mask]
 
     def euler_step(self):
-        for mass in self.masses:
-            if not mass.fixed:
+        for mass in self.mass_data:
+            if not mass[4]:  # mass[4] is fixed
                 # Calculate forces
                 fx, fy = self.calculate_forces(mass)
 
@@ -218,21 +212,6 @@ class Space:
         fx, fy = self.calculate_forces(mass)
         mass.x, mass.y = original_x, original_y
         return mass.vx, mass.vy, fx / mass.mass, fy / mass.mass
-
-    def apply_boundaries(self, mass):
-        if mass.x < mass.radius:
-            mass.x = mass.radius
-            mass.vx *= -mass.elastic
-        elif mass.x > self.width - mass.radius:
-            mass.x = self.width - mass.radius
-            mass.vx *= -mass.elastic
-
-        if mass.y < mass.radius:
-            mass.y = mass.radius
-            mass.vy *= -mass.elastic
-        elif mass.y > self.height - mass.radius:
-            mass.y = self.height - mass.radius
-            mass.vy *= -mass.elastic
 
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
@@ -318,7 +297,6 @@ def main(xsp_file: str, integration_method: str):
     profiler.enable()
 
     pygame.init()
-
     space = load_xsp(xsp_file)
     space.integration_method = integration_method
 
@@ -350,14 +328,17 @@ def main(xsp_file: str, integration_method: str):
         mass_surface.fill((0, 0, 0, 0))
         spring_surface.fill((0, 0, 0, 0))
 
+        # Draw springs
         for spring in space.springs:
+            m1, m2 = spring['mass1'], spring['mass2']
             pygame.draw.line(spring_surface, (255, 255, 255),
-                             (int(spring.mass1.x), int(space.height - spring.mass1.y)),
-                             (int(spring.mass2.x), int(space.height - spring.mass2.y)))
+                             (int(space.masses['x'][m1]), int(space.height - space.masses['y'][m1])),
+                             (int(space.masses['x'][m2]), int(space.height - space.masses['y'][m2])))
 
+        # Draw masses
         for mass in space.masses:
             pygame.draw.circle(mass_surface, (255, 0, 0),
-                               (int(mass.x), int(space.height - mass.y)), mass.radius)
+                               (int(mass['x']), int(space.height - mass['y'])), mass['radius'])
 
         # Blit surfaces to screen
         screen.blit(spring_surface, (0, 0))
