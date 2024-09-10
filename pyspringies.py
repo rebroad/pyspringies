@@ -70,25 +70,6 @@ class Space:
         self.max_force = 100  # REB: Attempt to stop the explosions
         self.max_velocity = 100  # REB: Attempt to stop the explosions
 
-    def add_mass(self, id, x, y, vx, vy, mass, elastic):
-        fixed = mass < 0
-        mass = abs(mass)
-        if mass == 0:
-            mass = self.default_mass
-        if elastic == 0:
-            elastic = self.default_elasticity
-        radius = max(1, min(64, int(2 * np.log(4.0 * mass + 1.0))))
-        new_mass = np.array([(id, x, y, vx, vy, mass, elastic, radius, fixed)], dtype=self.masses.dtype)
-        self.masses = np.vstack((self.masses, new_mass))
-
-    def add_spring(self, id, m1, m2, ks, kd, restlen):
-        if ks == 0:
-            ks = self.default_ks
-        if kd == 0:
-            kd = self.default_kd
-        new_spring = np.array([(id, m1, m2, ks, kd, restlen)], dtype=self.springs.dtype)
-        self.springs = np.vstack((self.springs, new_spring))
-
     def calculate_forces(self):
         forces = np.zeros((len(self.masses), 2))
 
@@ -181,6 +162,9 @@ class Space:
         mass.x, mass.y = original_x, original_y
         return mass.vx, mass.vy, fx / mass.mass, fy / mass.mass
 
+def mass_radius(mass):
+    return max(1, min(64, int(2 * np.log(4.0 * mass + 1.0))))
+
 def load_xsp(filename: str) -> Space:
     space = Space(800, 600)
     try:
@@ -192,17 +176,23 @@ def load_xsp(filename: str) -> Space:
                 if parts[0] == 'mass':
                     try:
                         id, x, y, vx, vy, mass, elastic = map(float, parts[1:])
-                        space.add_mass(int(id), x, y, vx, vy, mass, elastic)
+                        fixed = mass < 0
+                        mass = abs(mass)
+                        id = int(id)
+                        radius = mass_radius(mass)
+                        new_mass = np.array([(id, x, y, vx, vy, mass, elastic, radius, fixed)],
+                                            dtype=space.masses.dtype)
+                        space.masses = np.concatenate((space.masses, new_mass))
                     except ValueError as e:
                         print(f"Error parsing mass on line {line_number}: {e}")
                 elif parts[0] == 'spng':
                     try:
                         id, m1, m2, ks, kd, restlen = map(float, parts[1:])
                         m1, m2 = int(m1), int(m2)
-                        if 0 <= m1 < len(space.masses) and 0 <= m2 < len(space.masses):
-                            space.add_spring(int(id), m1, m2, ks, kd, restlen)
-                        else:
-                            print(f"Warning on line {line_number}: Invalid mass index in spring {int(id)} (m1={m1}, m2={m2})")
+                        id = int(id)
+                        new_spring = np.array([(id, m1, m2, ks, kd, restlen)],
+                                              dtype=space.springs.dtype)
+                        space.springs = np.concatenate((space.springs, new_spring))
                     except ValueError as e:
                         print(f"Error parsing spring on line {line_number}: {e}")
                 elif parts[0] == 'frce':
